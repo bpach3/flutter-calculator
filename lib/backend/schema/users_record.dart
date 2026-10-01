@@ -55,6 +55,11 @@ class UsersRecord extends FirestoreRecord {
   String get hometown => _hometown ?? '';
   bool hasHometown() => _hometown != null;
 
+  // "isCompleted" field.
+  bool? _isCompleted;
+  bool get isCompleted => _isCompleted ?? false;
+  bool hasIsCompleted() => _isCompleted != null;
+
   void _initializeFields() {
     _email = snapshotData['email'] as String?;
     _displayName = snapshotData['display_name'] as String?;
@@ -64,6 +69,7 @@ class UsersRecord extends FirestoreRecord {
     _phoneNumber = snapshotData['phone_number'] as String?;
     _birthday = snapshotData['birthday'] as DateTime?;
     _hometown = snapshotData['hometown'] as String?;
+    _isCompleted = snapshotData['isCompleted'] as bool?;
   }
 
   static CollectionReference get collection =>
@@ -108,6 +114,7 @@ Map<String, dynamic> createUsersRecordData({
   String? phoneNumber,
   DateTime? birthday,
   String? hometown,
+  bool? isCompleted,
 }) {
   final firestoreData = mapToFirestore(
     <String, dynamic>{
@@ -119,6 +126,7 @@ Map<String, dynamic> createUsersRecordData({
       'phone_number': phoneNumber,
       'birthday': birthday,
       'hometown': hometown,
+      'isCompleted': isCompleted,
     }.withoutNulls,
   );
 
@@ -137,7 +145,8 @@ class UsersRecordDocumentEquality implements Equality<UsersRecord> {
         e1?.createdTime == e2?.createdTime &&
         e1?.phoneNumber == e2?.phoneNumber &&
         e1?.birthday == e2?.birthday &&
-        e1?.hometown == e2?.hometown;
+        e1?.hometown == e2?.hometown &&
+        e1?.isCompleted == e2?.isCompleted;
   }
 
   @override
@@ -149,7 +158,8 @@ class UsersRecordDocumentEquality implements Equality<UsersRecord> {
         e?.createdTime,
         e?.phoneNumber,
         e?.birthday,
-        e?.hometown
+        e?.hometown,
+        e?.isCompleted
       ]);
 
   @override
