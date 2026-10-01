@@ -1,229 +1,193 @@
-import 'package:expressions/expressions.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-void main() {
-  runApp(const CalculatorApp());
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
+import 'auth/firebase_auth/firebase_user_provider.dart';
+import 'auth/firebase_auth/auth_util.dart';
+
+import 'backend/firebase/firebase_config.dart';
+import '/flutter_flow/flutter_flow_theme.dart';
+import 'flutter_flow/flutter_flow_util.dart';
+import 'index.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  GoRouter.optionURLReflectsImperativeAPIs = true;
+  usePathUrlStrategy();
+
+  await initFirebase();
+
+  await FlutterFlowTheme.initialize();
+
+  runApp(MyApp());
 }
 
-class CalculatorApp extends StatelessWidget {
-  const CalculatorApp({super.key});
+class MyApp extends StatefulWidget {
+  // This widget is the root of your application.
+  @override
+  State<MyApp> createState() => _MyAppState();
+
+  static _MyAppState of(BuildContext context) =>
+      context.findAncestorStateOfType<_MyAppState>()!;
+}
+
+class MyAppScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+      };
+}
+
+class _MyAppState extends State<MyApp> {
+  ThemeMode _themeMode = FlutterFlowTheme.themeMode;
+
+  late AppStateNotifier _appStateNotifier;
+  late GoRouter _router;
+  String getRoute([RouteMatch? routeMatch]) {
+    final RouteMatch lastMatch =
+        routeMatch ?? _router.routerDelegate.currentConfiguration.last;
+    final RouteMatchList matchList = lastMatch is ImperativeRouteMatch
+        ? lastMatch.matches
+        : _router.routerDelegate.currentConfiguration;
+    return matchList.uri.path;
+  }
+
+  List<String> getRouteStack() =>
+      _router.routerDelegate.currentConfiguration.matches
+          .map((e) => getRoute(e))
+          .toList();
+  late Stream<BaseAuthUser> userStream;
+
+  final authUserSub = authenticatedUserStream.listen((_) {});
+
+  @override
+  void initState() {
+    super.initState();
+
+    _appStateNotifier = AppStateNotifier.instance;
+    _router = createRouter(_appStateNotifier);
+    userStream = todoFirebaseUserStream()
+      ..listen((user) {
+        _appStateNotifier.update(user);
+      });
+    jwtTokenStream.listen((_) {});
+    Future.delayed(
+      Duration(milliseconds: 1000),
+      () => _appStateNotifier.stopShowingSplashImage(),
+    );
+  }
+
+  @override
+  void dispose() {
+    authUserSub.cancel();
+
+    super.dispose();
+  }
+
+  void setThemeMode(ThemeMode mode) => safeSetState(() {
+        _themeMode = mode;
+        FlutterFlowTheme.saveThemeMode(mode);
+      });
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Calculator',
+    return MaterialApp.router(
+      debugShowCheckedModeBanner: false,
+      title: 'Todo',
+      scrollBehavior: MyAppScrollBehavior(),
+      localizationsDelegates: [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('en', '')],
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color.fromARGB(255, 55, 135, 23),
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true,
+        brightness: Brightness.light,
+        useMaterial3: false,
       ),
-      home: const CalculatorPage(),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        useMaterial3: false,
+      ),
+      themeMode: _themeMode,
+      routerConfig: _router,
     );
   }
 }
 
-class CalculatorPage extends StatefulWidget {
-  const CalculatorPage({super.key});
+class NavBarPage extends StatefulWidget {
+  NavBarPage({
+    Key? key,
+    this.initialPage,
+    this.page,
+    this.disableResizeToAvoidBottomInset = false,
+  }) : super(key: key);
+
+  final String? initialPage;
+  final Widget? page;
+  final bool disableResizeToAvoidBottomInset;
 
   @override
-  State<CalculatorPage> createState() => _CalculatorPageState();
+  _NavBarPageState createState() => _NavBarPageState();
 }
 
-class _CalculatorPageState extends State<CalculatorPage> {
-  static const _operators = {'+', '-', '*', '/'};
-  String _expression = '';
-  String _display = '0';
-  String? _error;
-  bool _justEvaluated = false;
+/// This is the private State class that goes with NavBarPage.
+class _NavBarPageState extends State<NavBarPage> {
+  String _currentPageName = 'tasks';
+  late Widget? _currentPage;
 
-  void _press(String value) {
-    setState(() {
-      if (value == 'C') {
-        _clear();
-        return;
-      }
-      if (value == '=') {
-        _evaluate();
-        return;
-      }
-
-      if (_justEvaluated && !_operators.contains(value)) {
-        _expression = '';
-      }
-      _justEvaluated = false;
-      _error = null;
-
-      if (_operators.contains(value)) {
-        if (_expression.isEmpty) {
-          if (value != '-') return;
-        } else if (_operators.contains(_expression[_expression.length - 1])) {
-          _expression = _expression.substring(0, _expression.length - 1);
-        }
-      }
-
-      _expression += value;
-      _display = _expression;
-    });
-  }
-
-  void _clear() {
-    _expression = '';
-    _display = '0';
-    _error = null;
-    _justEvaluated = false;
-  }
-
-  void _evaluate() {
-    if (_expression.isEmpty) return;
-    try {
-      final parsed = Expression.parse(_expression);
-      final result = const ExpressionEvaluator().eval(parsed, {});
-      if (result is! num || !result.isFinite) {
-        throw const FormatException('The result is not a finite number.');
-      }
-      final formatted = _formatResult(result);
-      _display = '$_expression = $formatted';
-      _expression = formatted;
-      _justEvaluated = true;
-      _error = null;
-    } catch (_) {
-      _error = 'Unable to calculate this expression';
-      _display = _expression;
-    }
-  }
-
-  String _formatResult(num result) {
-    if (result is int || result == result.roundToDouble()) {
-      return result.toInt().toString();
-    }
-    return result.toString();
-  }
-
-  Color _buttonColor(String label, ColorScheme colors) {
-    if (label == '=') return colors.primary;
-    if (label == 'C') return colors.errorContainer;
-    if (_operators.contains(label)) return colors.secondaryContainer;
-    return colors.surfaceContainerHighest;
+  @override
+  void initState() {
+    super.initState();
+    _currentPageName = widget.initialPage ?? _currentPageName;
+    _currentPage = widget.page;
   }
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final tabs = {
+      'tasks': TasksWidget(),
+      'completed': CompletedWidget(),
+    };
+    final currentIndex = tabs.keys.toList().indexOf(_currentPageName);
+
     return Scaffold(
-      backgroundColor: colors.surface,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-              child: Column(
-                children: [
-                  Text(
-                    'GitHub Copilot\'s Calculator',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: colors.primary,
-                        ),
-                  ),
-                  const SizedBox(height: 22),
-                  Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: colors.primaryContainer,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Align(
-                        alignment: Alignment.bottomRight,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          reverse: true,
-                          child: Text(
-                            _display,
-                            maxLines: 1,
-                            style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: colors.onPrimaryContainer,
-                                ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 28,
-                    child: _error == null
-                        ? null
-                        : Text(
-                            _error!,
-                            style: TextStyle(color: colors.error),
-                          ),
-                  ),
-                  const SizedBox(height: 8),
-                  GridView.count(
-                    crossAxisCount: 4,
-                    shrinkWrap: true,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 1.45,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      for (final label in [
-                        '7', '8', '9', '/',
-                        '4', '5', '6', '*',
-                        '1', '2', '3', '-',
-                        'C', '0', '=', '+',
-                      ])
-                        _CalculatorButton(
-                          label: label,
-                          backgroundColor: _buttonColor(label, colors),
-                          foregroundColor: label == '='
-                              ? colors.onPrimary
-                              : label == 'C'
-                                  ? colors.onErrorContainer
-                                  : colors.onSurface,
-                          onPressed: () => _press(label),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
+      resizeToAvoidBottomInset: !widget.disableResizeToAvoidBottomInset,
+      body: _currentPage ?? tabs[_currentPageName],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: currentIndex,
+        onTap: (i) => safeSetState(() {
+          _currentPage = null;
+          _currentPageName = tabs.keys.toList()[i];
+        }),
+        backgroundColor: FlutterFlowTheme.of(context).primaryBackground,
+        selectedItemColor: FlutterFlowTheme.of(context).primary,
+        unselectedItemColor: FlutterFlowTheme.of(context).secondaryText,
+        showSelectedLabels: false,
+        showUnselectedLabels: false,
+        type: BottomNavigationBarType.fixed,
+        items: <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(
+              Icons.list,
+              size: 30.0,
             ),
+            label: 'Home',
+            tooltip: '',
           ),
-        ),
+          BottomNavigationBarItem(
+            icon: Icon(
+              Icons.checklist_rounded,
+              size: 30.0,
+            ),
+            label: 'Home',
+            tooltip: '',
+          )
+        ],
       ),
-    );
-  }
-}
-
-class _CalculatorButton extends StatelessWidget {
-  const _CalculatorButton({
-    required this.label,
-    required this.backgroundColor,
-    required this.foregroundColor,
-    required this.onPressed,
-  });
-
-  final String label;
-  final Color backgroundColor;
-  final Color foregroundColor;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return FilledButton(
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(
-        backgroundColor: backgroundColor,
-        foregroundColor: foregroundColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-      ),
-      child: Text(label),
     );
   }
 }
